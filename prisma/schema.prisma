@@ -1,0 +1,121 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Creator account (owns waitlists)
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String   // hashed
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  waitlists Waitlist[]
+}
+
+// A waitlist campaign
+model Waitlist {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+
+  // Settings stored as JSON
+  settings    Json     @default("{}")
+  // {
+  //   primaryColor: "#3B82F6",
+  //   buttonText: "Join Waitlist",
+  //   successMessage: "You're on the list!",
+  //   rewards: [{ threshold: 3, title: "Early Access" }]
+  // }
+
+  ownerId     String
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  signups     Signup[]
+  rewards     Reward[]
+  events      AnalyticsEvent[]
+
+  @@index([ownerId])
+}
+
+// A person who signed up for a waitlist
+model Signup {
+  id            String    @id @default(cuid())
+  waitlistId    String
+  waitlist      Waitlist  @relation(fields: [waitlistId], references: [id], onDelete: Cascade)
+
+  email         String
+  verified      Boolean   @default(false)
+  verifiedAt    DateTime?
+  verifyToken   String?   @unique  // For email verification
+
+  position      Int       // Position in line
+  referralCode  String    @unique  // Their unique referral code
+  referredBy    String?   // referralCode of who referred them
+  referralCount Int       @default(0)  // How many people they referred
+
+  // For fraud detection
+  ipAddress     String?
+  userAgent     String?
+  referrerUrl   String?   // Where they came from
+  fraudFlags    Json?     // { disposableEmail: false, sameIpReferral: false }
+
+  // Engagement tracking
+  engagementScore Int     @default(0)
+  emailOpens      Int     @default(0)
+  linkClicks      Int     @default(0)
+
+  // Status
+  invited       Boolean   @default(false)  // Has been batch-invited
+  invitedAt     DateTime?
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([waitlistId, email])
+  @@index([waitlistId, referralCount(sort: Desc)])
+  @@index([waitlistId, verified])
+  @@index([waitlistId, position])
+  @@index([referralCode])
+  @@index([referredBy])
+}
+
+// Reward tiers for referrals
+model Reward {
+  id          String   @id @default(cuid())
+  waitlistId  String
+  waitlist    Waitlist @relation(fields: [waitlistId], references: [id], onDelete: Cascade)
+
+  threshold   Int      // Number of referrals needed
+  title       String   // "Early Access"
+  description String   // "Get access 1 week before launch"
+
+  createdAt   DateTime @default(now())
+
+  @@index([waitlistId, threshold])
+}
+
+// Analytics events for tracking
+model AnalyticsEvent {
+  id         String   @id @default(cuid())
+  waitlistId String
+  waitlist   Waitlist @relation(fields: [waitlistId], references: [id], onDelete: Cascade)
+
+  type       String   // signup, verify, referral, email_open, link_click
+  signupId   String?
+  metadata   Json?    // Additional event data
+
+  createdAt  DateTime @default(now())
+
+  @@index([waitlistId, type])
+  @@index([waitlistId, createdAt])
+}
